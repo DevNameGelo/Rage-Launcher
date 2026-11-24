@@ -1,0 +1,80 @@
+name: Build Rage Launcher APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rage-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android platform
+        run: sdkmanager --install "platforms;android-37" "build-tools;37.0.0"
+
+      - name: Configure optional release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p signing
+            echo "$KEYSTORE_BASE64" | base64 -d > signing/rage-launcher.keystore
+            echo "RL_KEYSTORE_PATH=$GITHUB_WORKSPACE/signing/rage-launcher.keystore" >> "$GITHUB_ENV"
+            echo "RL_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RL_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RL_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "No release keystore configured; creating a debug-signed installable APK."
+          fi
+
+      - name: Build release APK
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/Rage-Launcher-v1.0.0.apk
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          BT="$(ls -d "$SDK"/build-tools/* | sort -V | tail -n 1)"
+          "$BT/apksigner" verify dist/Rage-Launcher-v1.0.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rage-Launcher-v1.0.0
+          path: dist/Rage-Launcher-v1.0.0.apk
+          if-no-files-found: error
+          retention-days: 30
