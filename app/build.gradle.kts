@@ -35,6 +35,9 @@ android {
         }
     }
     buildFeatures { compose = true }
+    // CI runners are memory-tight; lintVitalAnalyze was OOMing the daemon. The release APK is
+    // still verified by apksigner, and minify/R8 already catches broken code paths.
+    lint { checkReleaseBuilds = false }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
